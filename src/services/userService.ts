@@ -155,11 +155,11 @@ export const addActivity = async (userId: string, activity: {
     // First ensure the profile exists
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id')
+      .select('total_carbon_saved')
       .eq('id', userId)
       .single();
 
-    if (profileError || !profile) {
+    if (profileError) {
       // Create profile if it doesn't exist
       const { error: createError } = await supabase
         .from('profiles')
@@ -175,7 +175,7 @@ export const addActivity = async (userId: string, activity: {
     }
 
     // Add the activity
-    const { data, error } = await supabase
+    const { data, error: activityError } = await supabase
       .from('activities')
       .insert({
         user_id: userId,
@@ -184,34 +184,77 @@ export const addActivity = async (userId: string, activity: {
       .select()
       .single();
       
-    if (error) {
-      throw error;
+    if (activityError) {
+      throw activityError;
     }
-    
-    // Update the user's total carbon saved
-    if (activity.carbon_impact < 0) { // Negative impact means carbon saved
+
+    // Update the user's total carbon saved if the activity saves carbon (negative impact)
+    if (activity.carbon_impact < 0) {
       const carbonSaved = Math.abs(activity.carbon_impact);
-      
+      const newTotalSaved = (profile?.total_carbon_saved || 0) + carbonSaved;
+
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ 
-          total_carbon_saved: supabase.rpc('increment', { 
-            x: carbonSaved,
-            row_id: userId,
-            column_name: 'total_carbon_saved'
-          }) 
-        })
+        .update({ total_carbon_saved: newTotalSaved })
         .eq('id', userId);
-        
+
       if (updateError) {
         throw updateError;
       }
+
+      // Check and update user level
+      const newLevel = Math.min(10, Math.floor(newTotalSaved / 100) + 1);
+      await supabase
+        .from('profiles')
+        .update({ level: newLevel })
+        .eq('id', userId);
+
+      // Check for new achievements
+      await checkAndAwardAchievements(userId, newTotalSaved);
     }
     
     return data;
   } catch (error) {
     console.error('Error in addActivity:', error);
     throw error;
+  }
+};
+
+const checkAndAwardAchievements = async (userId: string, totalCarbonSaved: number) => {
+  try {
+    // Get all achievements that the user qualifies for but hasn't earned yet
+    const { data: newAchievements, error: achievementsError } = await supabase
+      .from('achievements')
+      .select('id, carbon_required')
+      .lte('carbon_required', totalCarbonSaved)
+      .not('id', 'in', (
+        supabase
+          .from('user_achievements')
+          .select('achievement_id')
+          .eq('user_id', userId)
+      ));
+
+    if (achievementsError) {
+      throw achievementsError;
+    }
+
+    if (newAchievements && newAchievements.length > 0) {
+      // Award new achievements
+      const achievementsToAdd = newAchievements.map(achievement => ({
+        user_id: userId,
+        achievement_id: achievement.id,
+      }));
+
+      const { error: awardError } = await supabase
+        .from('user_achievements')
+        .insert(achievementsToAdd);
+
+      if (awardError) {
+        throw awardError;
+      }
+    }
+  } catch (error) {
+    console.error('Error checking achievements:', error);
   }
 };
 
