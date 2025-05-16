@@ -28,23 +28,25 @@ const Dashboard = () => {
     loadData();
   }, [user]);
 
-  const categories = [
-    { name: 'Transport', path: '/transport', icon: <Car className="h-5 w-5" />, color: 'bg-blue-500' },
-    { name: 'Waste', path: '/waste', icon: <Trash2 className="h-5 w-5" />, color: 'bg-amber-500' },
-    { name: 'Diet', path: '/diet', icon: <Coffee className="h-5 w-5" />, color: 'bg-red-500' },
-    { name: 'Energy', path: '/energy', icon: <Zap className="h-5 w-5" />, color: 'bg-purple-500' },
-  ];
-
   if (isLoading) {
     return <div className="animate-pulse p-4">Loading dashboard data...</div>;
   }
 
-  const currentCarbon = userData?.totalCarbonSaved || 0;
+  if (!userData) {
+    return <div>No data available</div>;
+  }
 
-  const totalCarbon = Object.values(userData?.stats?.carbonByCategory || {}).reduce((sum: any, val: any) => sum + val, 0);
+  const categories = [
+    { name: 'transport', path: '/transport', icon: <Car className="h-5 w-5" />, color: 'bg-blue-500' },
+    { name: 'waste', path: '/waste', icon: <Trash2 className="h-5 w-5" />, color: 'bg-amber-500' },
+    { name: 'diet', path: '/diet', icon: <Coffee className="h-5 w-5" />, color: 'bg-red-500' },
+    { name: 'energy', path: '/energy', icon: <Zap className="h-5 w-5" />, color: 'bg-purple-500' },
+  ];
+
+  const totalCarbon = Object.values(userData.stats?.carbonByCategory || {}).reduce((sum: number, val: number) => sum + val, 0);
   const categoryPercentages = categories.map(cat => ({
     ...cat,
-    value: Math.round(((userData?.stats?.carbonByCategory?.[cat.name.toLowerCase()] || 0) / totalCarbon) * 100) || 0
+    value: Math.round(((userData.stats?.carbonByCategory?.[cat.name] || 0) / (totalCarbon || 1)) * 100)
   }));
 
   return (
@@ -61,14 +63,14 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Emissions Summary - full width */}
+      {/* Emissions Summary */}
       <motion.div
         className="card p-6"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <EmissionsSummary />
+        <EmissionsSummary userData={userData} />
       </motion.div>
 
       {/* Carbon Savings + Emission Categories */}
@@ -86,12 +88,33 @@ const Dashboard = () => {
               <div>
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Saved</p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {userData?.totalCarbonSaved.toFixed(1)} kg
+                  {userData.totalCarbonSaved?.toFixed(1)} kg
                 </p>
               </div>
               <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
                 <Trophy className="h-6 w-6 text-green-600 dark:text-green-400" />
               </div>
+            </div>
+            
+            {/* Level Progress */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Level {userData.level}
+                </span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {Math.min(100, Math.round((userData.totalCarbonSaved % 100) * 100 / 100))}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-primary-500 h-2 rounded-full"
+                  style={{ width: `${Math.min(100, Math.round((userData.totalCarbonSaved % 100) * 100 / 100))}%` }}
+                ></div>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {100 - (userData.totalCarbonSaved % 100)} kg to next level
+              </p>
             </div>
           </div>
         </motion.div>
@@ -120,13 +143,11 @@ const Dashboard = () => {
                   <div className="flex justify-between items-center">
                     <div className="flex items-center">
                       <div className={`${category.color} bg-opacity-10 p-2 rounded-lg mr-3`}>
-                        <span
-                          className={`text-${category.color.split('-')[1]}-600 dark:text-${category.color.split('-')[1]}-400`}
-                        >
+                        <span className={`text-${category.color.split('-')[1]}-600 dark:text-${category.color.split('-')[1]}-400`}>
                           {category.icon}
                         </span>
                       </div>
-                      <span className="font-medium text-gray-900 dark:text-white">{category.name}</span>
+                      <span className="font-medium text-gray-900 dark:text-white capitalize">{category.name}</span>
                     </div>
                     <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{category.value}%</span>
                   </div>
@@ -154,7 +175,7 @@ const Dashboard = () => {
         </motion.div>
       </div>
 
-      {/* Recent Activities - full width */}
+      {/* Recent Activities */}
       <motion.div
         className="card p-6"
         initial={{ opacity: 0, y: 20 }}
@@ -173,21 +194,28 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {userData?.stats?.recentActivities?.map((activity: any) => (
+              {userData.stats?.recentActivities?.map((activity: any) => (
                 <tr key={activity.id}>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white capitalize">
                     {activity.activity_type}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${activity.category}-100 text-${activity.category}-800 dark:bg-${activity.category}-900 dark:text-${activity.category}-200`}>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize" 
+                      style={{
+                        backgroundColor: activity.carbon_impact < 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 179, 8, 0.1)',
+                        color: activity.carbon_impact < 0 ? 'rgb(21, 128, 61)' : 'rgb(161, 98, 7)'
+                      }}>
                       {activity.category}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {new Date(activity.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-right text-green-600 dark:text-green-400">
-                    {activity.carbon_impact.toFixed(2)} kg CO2
+                  <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium text-right ${
+                    activity.carbon_impact < 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'
+                  }`}>
+                    {activity.carbon_impact < 0 ? 'Saved ' : 'Added '}
+                    {Math.abs(activity.carbon_impact).toFixed(2)} kg CO2
                   </td>
                 </tr>
               ))}
@@ -196,7 +224,7 @@ const Dashboard = () => {
         </div>
       </motion.div>
 
-      {/* Eco Tip - full width */}
+      {/* Eco Tip */}
       <motion.div
         className="card p-6 bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800"
         initial={{ opacity: 0, y: 20 }}

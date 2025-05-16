@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Line, Pie } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -14,8 +13,6 @@ import {
 } from 'chart.js';
 import { motion } from 'framer-motion';
 import { Car, Trash2, Coffee, Zap } from 'lucide-react';
-import { useAuthStore } from '../../stores/authStore';
-import { fetchUserData } from '../../services/userService';
 
 // Register Chart.js components
 ChartJS.register(
@@ -30,27 +27,11 @@ ChartJS.register(
   Filler
 );
 
-const EmissionsSummary = () => {
-  const [userData, setUserData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const { user } = useAuthStore();
+interface EmissionsSummaryProps {
+  userData: any;
+}
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!user) return;
-      try {
-        const data = await fetchUserData(user.id);
-        setUserData(data);
-      } catch (error) {
-        console.error('Error loading emissions data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, [user]);
-
+const EmissionsSummary = ({ userData }: EmissionsSummaryProps) => {
   const categoryIcons = {
     transport: <Car className="h-5 w-5" />,
     waste: <Trash2 className="h-5 w-5" />,
@@ -66,11 +47,11 @@ const EmissionsSummary = () => {
   };
 
   const pieChartData = {
-    labels: Object.keys(userData?.stats?.carbonByCategory || {}),
+    labels: Object.keys(userData?.stats?.carbonByCategory || {}).map(cat => cat.charAt(0).toUpperCase() + cat.slice(1)),
     datasets: [
       {
         data: Object.values(userData?.stats?.carbonByCategory || {}),
-        backgroundColor: Object.values(categoryColors),
+        backgroundColor: Object.keys(userData?.stats?.carbonByCategory || {}).map(cat => categoryColors[cat as keyof typeof categoryColors]),
         borderWidth: 0,
       },
     ],
@@ -82,22 +63,33 @@ const EmissionsSummary = () => {
         display: true,
         position: 'bottom' as const,
       },
+      tooltip: {
+        callbacks: {
+          label: function(context: any) {
+            const value = context.raw;
+            const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
+            const percentage = ((value / total) * 100).toFixed(1);
+            return `${value.toFixed(1)} kg CO2 (${percentage}%)`;
+          }
+        }
+      }
     },
     cutout: '65%',
     responsive: true,
     maintainAspectRatio: false,
   };
 
+  const recentActivities = userData?.stats?.recentActivities || [];
   const lineChartData = {
-    labels: userData?.stats?.recentActivities?.map((activity: any) => 
+    labels: recentActivities.map((activity: any) => 
       new Date(activity.created_at).toLocaleDateString()
-    ).reverse() || [],
+    ).reverse(),
     datasets: [
       {
         label: 'Carbon Impact',
-        data: userData?.stats?.recentActivities?.map((activity: any) => 
+        data: recentActivities.map((activity: any) => 
           activity.carbon_impact
-        ).reverse() || [],
+        ).reverse(),
         fill: true,
         backgroundColor: 'rgba(16, 185, 129, 0.1)',
         borderColor: 'rgba(16, 185, 129, 1)',
@@ -120,6 +112,14 @@ const EmissionsSummary = () => {
         borderWidth: 1,
         padding: 12,
         boxPadding: 6,
+        callbacks: {
+          label: function(context: any) {
+            const value = context.raw;
+            return value < 0 
+              ? `Saved ${Math.abs(value).toFixed(2)} kg CO2`
+              : `Added ${value.toFixed(2)} kg CO2`;
+          }
+        }
       },
     },
     scales: {
@@ -134,13 +134,14 @@ const EmissionsSummary = () => {
           borderDash: [2, 4],
           color: 'rgba(156, 163, 175, 0.2)',
         },
+        ticks: {
+          callback: function(value: any) {
+            return `${value} kg`;
+          }
+        }
       },
     },
   };
-
-  if (isLoading) {
-    return <div className="animate-pulse p-4">Loading emissions data...</div>;
-  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
